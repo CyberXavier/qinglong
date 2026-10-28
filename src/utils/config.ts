@@ -540,6 +540,7 @@ export default {
     '/subscription': intl.get('订阅管理'),
     '/config': intl.get('配置文件'),
     '/script': intl.get('脚本管理'),
+    '/result': intl.get('脚本结果'),
     '/diff': intl.get('对比工具'),
     '/log': intl.get('日志管理'),
     '/setting': intl.get('系统设置'),

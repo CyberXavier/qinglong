@@ -61,6 +61,12 @@ export default {
         component: '@/pages/script/index',
       },
       {
+        path: '/result',
+        name: intl.get('脚本结果'),
+        icon: <IconFont type="ql-icon-script" />,
+        component: '@/pages/result/index',
+      },
+      {
         path: '/dependence',
         name: intl.get('依赖管理'),
         icon: <IconFont type="ql-icon-dependence" />,

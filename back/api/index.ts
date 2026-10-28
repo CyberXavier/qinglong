@@ -1,3 +1,6 @@
+import fileBrowser from './fileBrowser';
+import panelConfig from '../config';
+import { join } from 'path';
 import { Router } from 'express';
 import user from './user';
 import env from './env';
@@ -23,6 +26,13 @@ export default () => {
   log(app);
   cron(app);
   script(app);
+  app.use(
+    '/results',
+    fileBrowser({
+      root: join(panelConfig.rootPath, 'data', 'res'),
+      createRoot: true,
+    }),
+  );
   open(app);
   dependence(app);
   system(app);

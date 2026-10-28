@@ -1,6 +1,7 @@
+import fileBrowser from './fileBrowser';
 import { randomUUID } from 'crypto';
 import { resolveFileAccess } from '../shared/fileAccess';
-import { fileExist, readDirs, readDir, rmPath, IFile } from '../config/util';
+import { fileExist, rmPath } from '../config/util';
 import { Router, Request, Response, NextFunction } from 'express';
 import { Container } from 'typedi';
 import { Logger } from 'winston';
@@ -76,81 +77,18 @@ const upload = multer({ storage: storage });
 export default (app: Router) => {
   app.use('/scripts', route);
 
-  route.get(
-    '/',
-    celebrate({
-      query: Joi.object({
-        path: Joi.string().optional().allow(''),
-      }).unknown(true),
+  route.use(
+    fileBrowser({
+      root: config.scriptPath,
+      blacklist: [
+        'node_modules',
+        '.git',
+        '.pnpm',
+        'pnpm-lock.yaml',
+        'yarn.lock',
+        'package-lock.json',
+      ],
     }),
-    async (req: Request, res: Response, next: NextFunction) => {
-      const logger: Logger = Container.get('logger');
-      try {
-        let result: IFile[] = [];
-        const blacklist = [
-          'node_modules',
-          '.git',
-          '.pnpm',
-          'pnpm-lock.yaml',
-          'yarn.lock',
-          'package-lock.json',
-        ];
-        if (req.query.path) {
-          if (
-            !resolveFileAccess(config.scriptPath, [req.query.path as string])
-          ) {
-            return res.send({ code: 403, message: t('暂无权限') });
-          }
-          result = await readDir(
-            req.query.path as string,
-            config.scriptPath,
-            blacklist,
-          );
-        } else {
-          result = await readDirs(
-            config.scriptPath,
-            config.scriptPath,
-            blacklist,
-            (a, b) => {
-              if (a.type === b.type) {
-                return a.title.localeCompare(b.title);
-              } else {
-                return a.type === 'directory' ? -1 : 1;
-              }
-            },
-          );
-        }
-        res.send({
-          code: 200,
-          data: result,
-        });
-      } catch (e) {
-        logger.error('🔥 error: %o', e);
-        return next(e);
-      }
-    },
-  );
-
-  route.get(
-    '/detail',
-    celebrate({
-      query: Joi.object({
-        path: Joi.string().optional().allow(''),
-        file: Joi.string().required(),
-      }).unknown(true),
-    }),
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const scriptService = Container.get(ScriptService);
-        const content = await scriptService.getFile(
-          (req.query?.path as string) || '',
-          req.query.file as string,
-        );
-        res.send({ code: 200, data: content });
-      } catch (e) {
-        return next(e);
-      }
-    },
   );
 
   const historyError = (error: unknown, res: Response, next: NextFunction) => {
@@ -418,76 +356,6 @@ export default (app: Router) => {
         return res.send({ code: 200, data });
       } catch (e) {
         return historyError(e, res, next);
-      }
-    },
-  );
-
-  route.delete(
-    '/',
-    celebrate({
-      body: Joi.object({
-        filename: Joi.string().required(),
-        path: Joi.string().optional().allow(''),
-        type: Joi.string().optional(),
-      }),
-    }),
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        let { filename, path } = req.body as {
-          filename: string;
-          path: string;
-        };
-        if (!path) {
-          path = '';
-        }
-        const scriptService = Container.get(ScriptService);
-        const filePath = scriptService.checkFilePath(path, filename);
-        if (!filePath) {
-          return res.send({
-            code: 403,
-            message: t('暂无权限'),
-          });
-        }
-        await rmPath(filePath);
-        res.send({ code: 200 });
-      } catch (e) {
-        return next(e);
-      }
-    },
-  );
-
-  route.post(
-    '/download',
-    celebrate({
-      body: Joi.object({
-        filename: Joi.string().required(),
-        path: Joi.string().optional().allow(''),
-      }),
-    }),
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        let { filename, path } = req.body as {
-          filename: string;
-          path: string;
-        };
-        if (!path) {
-          path = '';
-        }
-        const scriptService = Container.get(ScriptService);
-        const filePath = scriptService.checkFilePath(path, filename);
-        if (!filePath) {
-          return res.send({
-            code: 403,
-            message: t('暂无权限'),
-          });
-        }
-        return res.download(filePath, filename, (err) => {
-          if (err) {
-            return next(err);
-          }
-        });
-      } catch (e) {
-        return next(e);
       }
     },
   );

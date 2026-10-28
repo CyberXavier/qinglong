@@ -759,5 +759,9 @@
   "启动版本与更新包不一致": "The running build does not match the update package.",
   "下载完成，等待重启": "Download complete, restart to update",
   "升级成功": "Update successful",
-  "已重新启动并运行新版本，无需再次重启。": "Restarted and running the new version. No further restart is needed."
+  "已重新启动并运行新版本，无需再次重启。": "Restarted and running the new version. No further restart is needed.",
+  "脚本结果": "Script Results",
+  "请选择结果文件": "Please select a result file",
+  "暂无脚本结果": "No script results available",
+  "当前文件不支持预览，请下载查看": "Preview unavailable. Download the file to view it."
 }

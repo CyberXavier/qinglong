@@ -1,0 +1,846 @@
+import IconFont from '@/components/iconfont';
+import useFilterTreeData from '@/hooks/useFilterTreeData';
+import { SharedContext } from '@/layouts';
+import { depthFirstSearch, findNode, getEditorMode } from '@/utils';
+import config from '@/utils/config';
+import { request } from '@/utils/http';
+import { getCodeMirrorExtensions } from '@/utils/codemirror/language';
+import { canPreviewInMonaco } from '@/utils/monaco';
+import {
+  CloudDownloadOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  EllipsisOutlined,
+  HistoryOutlined,
+  PlusOutlined,
+} from '@ant-design/icons';
+import { PageContainer } from '@ant-design/pro-layout';
+import Editor from '@monaco-editor/react';
+import CodeMirror from '@uiw/react-codemirror';
+import { history, useOutletContext } from '@umijs/max';
+import {
+  Button,
+  Dropdown,
+  Empty,
+  Input,
+  MenuProps,
+  message,
+  Modal,
+  Tooltip,
+  Tree,
+  TreeSelect,
+  Typography,
+} from 'antd';
+import { saveAs } from 'file-saver';
+import debounce from 'lodash/debounce';
+import uniq from 'lodash/uniq';
+import prettyBytes from 'pretty-bytes';
+import { parse } from 'query-string';
+import { Key, useCallback, useEffect, useRef, useState } from 'react';
+import { useHotkeys } from 'react-hotkeys-hook';
+import intl from 'react-intl-universal';
+import SplitPane from 'react-split-pane';
+import EditModal from '@/pages/script/editModal';
+import HistoryDrawer from '@/pages/script/historyDrawer';
+import { saveWithHistory } from '@/pages/script/saveWithHistory';
+import EditScriptNameModal from '@/pages/script/editNameModal';
+import styles from '@/pages/script/index.module.less';
+import RenameModal from '@/pages/script/renameModal';
+import UnsupportedFilePreview from '@/pages/script/components/UnsupportedFilePreview';
+const { Text } = Typography;
+
+interface FileBrowserProps {
+  api?: 'scripts' | 'results';
+  readOnly?: boolean;
+  labels?: { select: string; search: string; empty: string };
+}
+
+const Script = ({
+  api = 'scripts',
+  readOnly = false,
+  labels = {
+    select: '请选择脚本文件',
+    search: '请输入脚本名',
+    empty: '暂无脚本',
+  },
+}: FileBrowserProps) => {
+  const { headerStyle, isPhone, theme } = useOutletContext<SharedContext>();
+  const [value, setValue] = useState(intl.get(labels.select));
+  const [select, setSelect] = useState<string>(intl.get(labels.select));
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState('');
+  const [height, setHeight] = useState<number>();
+  const treeDom = useRef<any>();
+  const [isLogModalVisible, setIsLogModalVisible] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const editorRef = useRef<any>(null);
+  const [isAddFileModalVisible, setIsAddFileModalVisible] = useState(false);
+  const [isRenameFileModalVisible, setIsRenameFileModalVisible] =
+    useState(false);
+  const [currentNode, setCurrentNode] = useState<any>();
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [showMonaco, setShowMonaco] = useState(true);
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const savedContentRef = useRef('');
+  const currentKeyRef = useRef(currentNode?.key);
+  currentKeyRef.current = currentNode?.key;
+
+  useEffect(() => {
+    setHistoryVisible(false);
+  }, [currentNode?.key]);
+
+  const hasUnsavedChanges = () => {
+    const content =
+      !isPhone && editorRef.current ? editorRef.current.getValue() : value;
+    return (
+      isEditing &&
+      content.replace(/\r\n/g, '\n') !==
+        savedContentRef.current.replace(/\r\n/g, '\n')
+    );
+  };
+
+  const handleIsEditing = (filename: string, value: boolean) => {
+    setIsEditing(!readOnly && value && canPreviewInMonaco(filename));
+  };
+
+  const getScripts = (needLoading: boolean = true) => {
+    needLoading && setLoading(true);
+    request
+      .get(`${config.apiPrefix}${api}`)
+      .then(({ code, data }) => {
+        if (code === 200) {
+          setData(data);
+          initState();
+          initGetScript(data);
+        }
+      })
+      .finally(() => needLoading && setLoading(false));
+  };
+
+  const getDetail = (node: any, options: any = {}) => {
+    request
+      .get(
+        `${config.apiPrefix}${api}/detail?file=${encodeURIComponent(
+          node.title,
+        )}&path=${encodeURIComponent(node.parent || '')}`,
+      )
+      .then(({ code, data }) => {
+        if (code === 200 && currentKeyRef.current === node.key) {
+          savedContentRef.current = data;
+          setValue(data);
+          if (options.callback) {
+            options.callback();
+          }
+        }
+      });
+  };
+
+  const downloadScript = () => {
+    if (currentNode?.type !== 'file') return;
+    const node = currentNode;
+    request
+      .post<Blob>(
+        `${config.apiPrefix}${api}/download`,
+        {
+          filename: currentNode.title,
+          path: currentNode.parent || '',
+        },
+        { responseType: 'blob' },
+      )
+      .then((res) => {
+        saveAs(res, node.title);
+      });
+  };
+
+  const initGetScript = (_data: any) => {
+    const { p, s } = parse(history.location.search);
+    if (s) {
+      const vkey = `${p}/${s}`;
+      const obj = {
+        node: {
+          title: s,
+          key: p ? vkey : s,
+          parent: p,
+        },
+      };
+      const item = findNode(_data, (c) => c.key === obj.node.key);
+      if (item) {
+        obj.node = item;
+        setExpandedKeys([p as string]);
+        onTreeSelect([vkey], obj);
+      }
+    }
+  };
+
+  const onSelect = (value: any, node: any) => {
+    if (node.key === select || !value) {
+      return;
+    }
+
+    setSelect(node.key);
+    setCurrentNode(node);
+    currentKeyRef.current = node.key;
+
+    if (node.type === 'directory') {
+      setValue(intl.get(labels.select));
+      setShowMonaco(true);
+      return;
+    }
+
+    if (!canPreviewInMonaco(node.title)) {
+      setShowMonaco(false);
+      return;
+    }
+
+    setShowMonaco(true);
+    const newMode = getEditorMode(node.title);
+    setMode(isPhone && newMode === 'typescript' ? 'javascript' : newMode);
+    setValue(intl.get('加载中...'));
+
+    getDetail(node, {
+      callback: () => {
+        if (isEditing) {
+          setIsEditing(true);
+        }
+      },
+    });
+  };
+
+  const onTreeSelect = useCallback(
+    (keys: Key[], e: any) => {
+      const node = e.node;
+      if (node.key === select && isEditing) {
+        return;
+      }
+
+      const currentContent = editorRef.current
+        ? editorRef.current.getValue().replace(/\r\n/g, '\n')
+        : value;
+      const originalContent = savedContentRef.current.replace(/\r\n/g, '\n');
+
+      if (currentContent !== originalContent && isEditing) {
+        Modal.confirm({
+          title: intl.get('确认离开'),
+          content: <>{intl.get('当前文件未保存，确认离开吗')}</>,
+          onOk() {
+            onSelect(keys[0], e.node);
+            handleIsEditing(e.node.title, false);
+          },
+        });
+      } else {
+        handleIsEditing(e.node.title, false);
+        onSelect(keys[0], e.node);
+      }
+    },
+    [value, select, isEditing],
+  );
+
+  const onSearch = useCallback(
+    (e) => {
+      const keyword = e.target.value;
+      debounceSearch(keyword);
+    },
+    [data],
+  );
+
+  const debounceSearch = useCallback(
+    debounce((keyword) => {
+      setSearchValue(keyword);
+    }, 300),
+    [data],
+  );
+
+  const { treeData: filterData, keys: searchExpandedKeys } = useFilterTreeData(
+    data,
+    searchValue,
+    { treeNodeFilterProp: 'title' },
+  );
+
+  useEffect(() => {
+    setExpandedKeys(uniq([...expandedKeys, ...searchExpandedKeys]));
+  }, [searchExpandedKeys]);
+
+  const onExpand = (expKeys: any) => {
+    setExpandedKeys(expKeys);
+  };
+
+  const onDoubleClick = (e: any, node: any) => {
+    if (readOnly) return;
+    if (node.type === 'file') {
+      setSelect(node.key);
+      setCurrentNode(node);
+      handleIsEditing(node.title, true);
+    }
+  };
+
+  const editFile = () => {
+    setTimeout(() => {
+      handleIsEditing(currentNode.title, true);
+    }, 300);
+  };
+
+  const cancelEdit = () => {
+    handleIsEditing(currentNode.title, false);
+    setValue(intl.get('加载中...'));
+    getDetail(currentNode);
+  };
+
+  const saveFile = async () => {
+    if (readOnly || savingRef.current || !currentNode) return;
+    const node = currentNode;
+    const content =
+      !isPhone && editorRef.current
+        ? editorRef.current.getValue().replace(/\r\n/g, '\n')
+        : value;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      const result = await saveWithHistory('put', `${config.apiPrefix}${api}`, {
+        filename: node.title,
+        path: node.parent || '',
+        content,
+      });
+      if (result?.code === 200 && currentKeyRef.current === node.key) {
+        savedContentRef.current = content;
+        setValue(content);
+        handleIsEditing(node.title, false);
+      }
+    } catch {
+      // The shared HTTP handler presents the server's error; keep the draft.
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const deleteFile = () => {
+    if (!currentNode) return;
+    Modal.confirm({
+      title: intl.get('确认删除'),
+      content: (
+        <>
+          {intl.get('确认删除')}
+          <Text style={{ wordBreak: 'break-all' }} type="warning">
+            {' '}
+            {select}{' '}
+          </Text>
+          {intl.get('文件')}
+          {currentNode.type === 'directory' ? intl.get('夹及其子文件') : ''}
+          {intl.get('，删除后不可恢复')}
+        </>
+      ),
+      onOk() {
+        request
+          .delete(`${config.apiPrefix}${api}`, {
+            data: {
+              filename: currentNode.title,
+              path: currentNode.parent || '',
+              type: currentNode.type,
+            },
+          })
+          .then(({ code }) => {
+            if (code === 200) {
+              message.success(intl.get('删除成功'));
+              let newData = [...data];
+              if (currentNode.parent) {
+                newData = depthFirstSearch(
+                  newData,
+                  (c) => c.key === currentNode.key,
+                );
+              } else {
+                const index = newData.findIndex(
+                  (x) => x.key === currentNode.key,
+                );
+                if (index !== -1) {
+                  newData.splice(index, 1);
+                }
+              }
+              setData(newData);
+              initState();
+            }
+          });
+      },
+    });
+  };
+
+  const renameFile = () => {
+    setIsRenameFileModalVisible(true);
+  };
+
+  const handleRenameFileCancel = () => {
+    setIsRenameFileModalVisible(false);
+    getScripts(false);
+  };
+
+  const addFile = () => {
+    if (!readOnly) setIsAddFileModalVisible(true);
+  };
+
+  const addFileModalClose = async (
+    {
+      filename,
+      path,
+      key,
+      type,
+    }: { filename: string; path: string; key: string; type?: string } = {
+      filename: '',
+      path: '',
+      key: '',
+    },
+  ) => {
+    if (filename) {
+      const res = await request.get(`${config.apiPrefix}${api}`);
+      let newData = res.data;
+      if (type === 'directory' && filename.includes('/')) {
+        const parts = filename.split('/');
+        parts.pop();
+        const parentPath = parts.join('/');
+        path = path ? `${path}/${parentPath}` : parentPath;
+      }
+      const item = findNode(newData, (c) => c.key === key);
+      if (path) {
+        const keys = path.split('/');
+        const sKeys: string[] = [];
+        keys.reduce((p, c) => {
+          sKeys.push(p);
+          return `${p}/${c}`;
+        });
+        setExpandedKeys([...expandedKeys, ...sKeys, path]);
+      }
+      setData(newData);
+      onSelect(item.title, item);
+      handleIsEditing(item.title, true);
+    }
+    setIsAddFileModalVisible(false);
+  };
+
+  const initState = () => {
+    currentKeyRef.current = undefined;
+    setShowMonaco(true);
+    setSelect(intl.get(labels.select));
+    setCurrentNode(null);
+    setValue(intl.get(labels.select));
+  };
+
+  useEffect(() => {
+    getScripts();
+  }, []);
+
+  useEffect(() => {
+    if (treeDom.current) {
+      setHeight(treeDom.current.clientHeight - 6);
+    }
+  }, [treeDom.current, data]);
+
+  useHotkeys(
+    'mod+s',
+    (e) => {
+      if (isEditing) {
+        saveFile();
+      }
+    },
+    {
+      enabled: !readOnly,
+      enableOnFormTags: ['textarea'],
+      preventDefault: true,
+    },
+  );
+
+  useHotkeys(
+    'mod+d',
+    (e) => {
+      if (currentNode?.title) {
+        deleteFile();
+      }
+    },
+    { preventDefault: true },
+  );
+
+  useHotkeys(
+    'mod+o',
+    (e) => {
+      if (!isEditing) {
+        addFile();
+      }
+    },
+    { enabled: !readOnly, preventDefault: true },
+  );
+
+  useHotkeys(
+    'mod+e',
+    (e) => {
+      if (currentNode?.title) {
+        cancelEdit();
+      }
+    },
+    { enabled: !readOnly, preventDefault: true },
+  );
+
+  const action = (key: string | number) => {
+    switch (key) {
+      case 'save':
+        saveFile();
+        break;
+      case 'exit':
+        cancelEdit();
+        break;
+      default:
+        break;
+    }
+  };
+
+  const menuAction = (key: string | number) => {
+    switch (key) {
+      case 'add':
+        addFile();
+        break;
+      case 'edit':
+        editFile();
+        break;
+      case 'delete':
+        deleteFile();
+        break;
+      case 'rename':
+        renameFile();
+        break;
+      default:
+        break;
+    }
+  };
+
+  const resultMenu: MenuProps = {
+    items: [
+      {
+        label: intl.get('下载'),
+        key: 'download',
+        icon: <CloudDownloadOutlined />,
+        disabled: currentNode?.type !== 'file',
+      },
+      {
+        label: intl.get('删除'),
+        key: 'delete',
+        icon: <DeleteOutlined />,
+        disabled: !currentNode,
+      },
+    ],
+    onClick: ({ key }) =>
+      key === 'download' ? downloadScript() : deleteFile(),
+  };
+
+  const menu: MenuProps = readOnly
+    ? resultMenu
+    : isEditing
+    ? {
+        items: [
+          { label: intl.get('保存'), key: 'save', icon: <PlusOutlined /> },
+          { label: intl.get('退出编辑'), key: 'exit', icon: <EditOutlined /> },
+        ],
+        onClick: ({ key, domEvent }) => {
+          domEvent.stopPropagation();
+          action(key);
+        },
+      }
+    : {
+        items: [
+          { label: intl.get('创建'), key: 'add', icon: <PlusOutlined /> },
+          {
+            label: intl.get('编辑'),
+            key: 'edit',
+            icon: <EditOutlined />,
+            disabled: !currentNode,
+          },
+          {
+            label: intl.get('重命名'),
+            key: 'rename',
+            icon: <IconFont type="ql-icon-rename" />,
+            disabled: !currentNode,
+          },
+          {
+            label: intl.get('删除'),
+            key: 'delete',
+            icon: <DeleteOutlined />,
+            disabled: !currentNode,
+          },
+        ],
+        onClick: ({ key, domEvent }) => {
+          domEvent.stopPropagation();
+          menuAction(key);
+        },
+      };
+
+  const handleForceOpen = () => {
+    if (readOnly || !currentNode) return;
+
+    setMode('plaintext');
+    setValue(intl.get('加载中...'));
+    setShowMonaco(true);
+
+    getDetail(currentNode, {
+      callback: () => {
+        setIsEditing(true);
+      },
+    });
+  };
+
+  return (
+    <PageContainer
+      className="ql-container-wrapper log-wrapper"
+      title={
+        <>
+          {select}
+          {currentNode?.type === 'file' && (
+            <span
+              style={{
+                marginLeft: 6,
+                fontSize: 12,
+                color: '#999',
+                display: 'inline-block',
+                height: 14,
+              }}
+            >
+              {prettyBytes(currentNode.size)}
+            </span>
+          )}
+        </>
+      }
+      loading={loading}
+      extra={[
+        ...(!readOnly && currentNode?.type === 'file' && showMonaco
+          ? [
+              <Button
+                key="history"
+                icon={<HistoryOutlined />}
+                disabled={saving}
+                onClick={() => setHistoryVisible(true)}
+              >
+                {!isPhone && intl.get('历史版本')}
+              </Button>,
+            ]
+          : []),
+        ...(isPhone
+          ? [
+              <TreeSelect
+                treeExpandAction="click"
+                className="log-select"
+                value={select}
+                dropdownStyle={{ maxHeight: 400, overflow: 'auto' }}
+                treeData={data}
+                placeholder={intl.get(labels.select)}
+                fieldNames={{ value: 'key' }}
+                treeNodeFilterProp="title"
+                showSearch
+                allowClear
+                onSelect={(key, node) => onTreeSelect([key], { node })}
+              />,
+              <Dropdown menu={menu} trigger={['click']}>
+                <Button type="primary" icon={<EllipsisOutlined />} />
+              </Dropdown>,
+            ]
+          : isEditing
+          ? [
+              <Button type="primary" onClick={saveFile} loading={saving}>
+                {intl.get('保存')}
+              </Button>,
+              <Button type="primary" onClick={cancelEdit}>
+                {intl.get('退出编辑')}
+              </Button>,
+            ]
+          : [
+              ...(!readOnly
+                ? [
+                    <Tooltip title={intl.get('创建')}>
+                      <Button
+                        type="primary"
+                        onClick={addFile}
+                        icon={<PlusOutlined />}
+                      />
+                    </Tooltip>,
+                    <Tooltip title={intl.get('编辑')}>
+                      <Button
+                        disabled={!currentNode}
+                        type="primary"
+                        onClick={editFile}
+                        icon={<EditOutlined />}
+                      />
+                    </Tooltip>,
+                    <Tooltip title={intl.get('重命名')}>
+                      <Button
+                        disabled={!currentNode}
+                        type="primary"
+                        onClick={renameFile}
+                        icon={<IconFont type="ql-icon-rename" />}
+                      />
+                    </Tooltip>,
+                  ]
+                : []),
+              <Tooltip title={intl.get('下载')}>
+                <Button
+                  disabled={!currentNode || currentNode.type === 'directory'}
+                  type="primary"
+                  onClick={downloadScript}
+                  icon={<CloudDownloadOutlined />}
+                />
+              </Tooltip>,
+              <Tooltip title={intl.get('删除')}>
+                <Button
+                  type="primary"
+                  disabled={!currentNode}
+                  onClick={deleteFile}
+                  icon={<DeleteOutlined />}
+                />
+              </Tooltip>,
+              ...(!readOnly
+                ? [
+                    <Button
+                      type="primary"
+                      onClick={() => {
+                        setIsLogModalVisible(true);
+                      }}
+                    >
+                      {intl.get('调试')}
+                    </Button>,
+                  ]
+                : []),
+            ]),
+      ]}
+      header={{
+        style: headerStyle,
+      }}
+    >
+      {!readOnly && historyVisible && currentNode && (
+        <HistoryDrawer
+          key={currentNode.key}
+          filename={currentNode.title}
+          directory={currentNode.parent || ''}
+          isPhone={isPhone}
+          theme={theme}
+          language={mode}
+          hasUnsavedChanges={hasUnsavedChanges}
+          onClose={() => setHistoryVisible(false)}
+          onRestored={(content) => {
+            savedContentRef.current = content;
+            setValue(content);
+            setIsEditing(false);
+          }}
+        />
+      )}
+      <div className={`${styles['log-container']} log-container`}>
+        {!isPhone && (
+          /*// @ts-ignore*/
+          <SplitPane split="vertical" size={200} maxSize={-100}>
+            <div className={styles['left-tree-container']}>
+              {data.length > 0 ? (
+                <>
+                  <Input.Search
+                    className={styles['left-tree-search']}
+                    onChange={onSearch}
+                    placeholder={intl.get(labels.search)}
+                    allowClear
+                  ></Input.Search>
+                  <div className={styles['left-tree-scroller']} ref={treeDom}>
+                    <Tree
+                      expandAction="click"
+                      className={styles['left-tree']}
+                      treeData={filterData}
+                      showIcon={true}
+                      height={height}
+                      selectedKeys={[select]}
+                      expandedKeys={expandedKeys}
+                      onExpand={onExpand}
+                      showLine={{ showLeafIcon: true }}
+                      onSelect={onTreeSelect}
+                      onDoubleClick={onDoubleClick}
+                    ></Tree>
+                  </div>
+                </>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    height: '100%',
+                  }}
+                >
+                  <Empty
+                    description={intl.get(labels.empty)}
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  />
+                </div>
+              )}
+            </div>
+            {showMonaco ? (
+              <Editor
+                language={mode}
+                value={value}
+                theme={theme}
+                options={{
+                  readOnly: readOnly || !isEditing || saving,
+                  fontSize: 12,
+                  lineNumbersMinChars: 3,
+                  glyphMargin: false,
+                  accessibilitySupport: 'off',
+                }}
+                onMount={(editor) => {
+                  editorRef.current = editor;
+                }}
+              />
+            ) : readOnly ? (
+              <Empty
+                description={intl.get('当前文件不支持预览，请下载查看')}
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            ) : (
+              <UnsupportedFilePreview onForceOpen={handleForceOpen} />
+            )}
+          </SplitPane>
+        )}
+        {isPhone &&
+          (readOnly && !showMonaco ? (
+            <Empty
+              description={intl.get('当前文件不支持预览，请下载查看')}
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            />
+          ) : (
+            <CodeMirror
+              value={value}
+              extensions={getCodeMirrorExtensions(mode)}
+              theme={theme.includes('dark') ? 'dark' : 'light'}
+              readOnly={readOnly || !isEditing || saving}
+              onChange={(value) => {
+                setValue(value);
+              }}
+            />
+          ))}
+        {isLogModalVisible && !readOnly && (
+          <EditModal
+            treeData={data}
+            currentNode={currentNode}
+            content={value}
+            handleCancel={() => {
+              setIsLogModalVisible(false);
+            }}
+          />
+        )}
+        {!readOnly && isAddFileModalVisible && (
+          <EditScriptNameModal
+            treeData={data}
+            handleCancel={addFileModalClose}
+          />
+        )}
+        {!readOnly && isRenameFileModalVisible && (
+          <RenameModal
+            handleCancel={handleRenameFileCancel}
+            currentNode={currentNode}
+          />
+        )}
+      </div>
+    </PageContainer>
+  );
+};
+
+export default Script;
