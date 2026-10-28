@@ -148,6 +148,9 @@ dependencies:
   winston-daily-rotate-file:
     specifier: ^5.0.0
     version: 5.0.0(winston@3.17.0)
+  yazl:
+    specifier: 3.3.1
+    version: 3.3.1
 
 devDependencies:
   '@ant-design/icons':
@@ -243,6 +246,9 @@ devDependencies:
   '@types/uuid':
     specifier: ^8.3.4
     version: 8.3.4
+  '@types/yazl':
+    specifier: 3.3.1
+    version: 3.3.1
   '@uiw/codemirror-extensions-langs':
     specifier: ^4.21.9
     version: 4.23.6(@codemirror/autocomplete@6.20.1)(@codemirror/language-data@6.5.2)(@codemirror/language@6.12.2)(@codemirror/legacy-modes@6.5.2)(@codemirror/state@6.5.4)(@codemirror/view@6.39.16)(@lezer/common@1.5.1)(@lezer/highlight@1.2.3)(@lezer/javascript@1.5.4)(@lezer/lr@1.4.8)
@@ -4671,6 +4677,12 @@ packages:
       '@types/yargs-parser': 21.0.3
     dev: true
 
+  /@types/yazl@3.3.1:
+    resolution: {integrity: sha512-DIWfCKpsTp6hE5BDBHV3+fIL/bLUF9Bv13iDrWnMlmhQpH67buNvI291ZauQ1xcccxK3FqQ9honnXpq4R8NMuQ==}
+    dependencies:
+      '@types/node': 17.0.45
+    dev: true
+
   /@typescript-eslint/eslint-plugin@5.62.0(@typescript-eslint/parser@5.62.0)(eslint@8.35.0)(typescript@5.2.2):
     resolution: {integrity: sha512-TiZzBSJja/LbhNPvk6yc0JrX9XqhQ0hdh6M2svYfsHGejaKFIAGd9MQ+ERIMzLGlN/kZoYIgdxFV0PuljTKXag==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
@@ -6447,6 +6459,11 @@ packages:
     dependencies:
       node-int64: 0.4.0
     dev: true
+
+  /buffer-crc32@1.0.0:
+    resolution: {integrity: sha512-Db1SbgBS/fg/392AblrMJk97KggmvYhr4pB5ZIMTWtaivCPMWLkmb7m21cJvpvgK+J3nsU2CmmixNBZx4vFj/w==}
+    engines: {node: '>=8.0.0'}
+    dev: false
 
   /buffer-equal-constant-time@1.0.1:
     resolution: {integrity: sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA==}
@@ -15757,6 +15774,12 @@ packages:
       string-width: 4.2.3
       y18n: 5.0.8
       yargs-parser: 21.1.1
+
+  /yazl@3.3.1:
+    resolution: {integrity: sha512-BbETDVWG+VcMUle37k5Fqp//7SDOK2/1+T7X8TD96M3D9G8jK5VLUdQVdVjGi8im7FGkazX7kk5hkU8X4L5Bng==}
+    dependencies:
+      buffer-crc32: 1.0.0
+    dev: false
 
   /yn@3.1.1:
     resolution: {integrity: sha512-Ux4ygGWsu2c7isFWe8Yu1YluJmqVhxqK2cLXNQA5AcC3QfbGNpM7fu0Y8b/z16pXLnFxZYvWhd3fhBY9DLmC6Q==}

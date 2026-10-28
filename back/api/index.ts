@@ -31,6 +31,7 @@ export default () => {
     fileBrowser({
       root: join(panelConfig.rootPath, 'data', 'res'),
       createRoot: true,
+      allowDirectoryDownload: true,
     }),
   );
   open(app);

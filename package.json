@@ -166,7 +166,8 @@
     "uuid": "^11.0.3",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "tar": "7.5.20"
+    "tar": "7.5.20",
+    "yazl": "3.3.1"
   },
   "devDependencies": {
     "@ant-design/icons": "^5.0.1",
@@ -200,6 +201,7 @@
     "@types/sockjs": "^0.3.33",
     "@types/sockjs-client": "^1.5.1",
     "@types/uuid": "^8.3.4",
+    "@types/yazl": "3.3.1",
     "@uiw/codemirror-extensions-langs": "^4.21.9",
     "@uiw/react-codemirror": "^4.21.9",
     "@umijs/max": "^4.4.4",

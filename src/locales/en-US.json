@@ -763,5 +763,8 @@
   "脚本结果": "Script Results",
   "请选择结果文件": "Please select a result file",
   "暂无脚本结果": "No script results available",
-  "当前文件不支持预览，请下载查看": "Preview unavailable. Download the file to view it."
+  "当前文件不支持预览，请下载查看": "Preview unavailable. Download the file to view it.",
+  "打包下载": "Download ZIP",
+  "下载中...": "Downloading...",
+  "下载失败，请重试": "Download failed. Please try again."
 }

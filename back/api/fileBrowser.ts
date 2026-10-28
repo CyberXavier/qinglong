@@ -6,15 +6,18 @@ import * as fs from 'fs/promises';
 import { readDirs, readDir, IFile, getFileContentByName } from '../config/util';
 import { resolveFileAccess } from '../shared/fileAccess';
 import { t } from '../shared/i18n';
+import { downloadDirectoryZip } from '../shared/directoryZip';
 
 export default function fileBrowser({
   root,
   blacklist = [],
   createRoot = false,
+  allowDirectoryDownload = false,
 }: {
   root: string;
   blacklist?: string[];
   createRoot?: boolean;
+  allowDirectoryDownload?: boolean;
 }) {
   const route = Router();
   route.get(
@@ -131,17 +134,37 @@ export default function fileBrowser({
         }
         const filePath = resolveFileAccess(root, [path, filename]);
         if (!filePath) {
-          return res.send({
+          return res.status(403).send({
             code: 403,
             message: t('暂无权限'),
           });
         }
+        if (allowDirectoryDownload) {
+          const stats = await fs.lstat(filePath);
+          if (stats.isDirectory()) {
+            await downloadDirectoryZip(filePath, res, blacklist);
+            return;
+          }
+          if (!stats.isFile()) {
+            return res.status(403).send({ code: 403, message: t('暂无权限') });
+          }
+        }
         return res.download(filePath, filename, (err) => {
           if (err) {
+            if (res.headersSent || res.destroyed) {
+              res.destroy();
+              return;
+            }
             return next(err);
           }
         });
       } catch (e) {
+        if (res.headersSent || res.destroyed) {
+          const logger: Logger = Container.get('logger');
+          logger.error('File download failed: %o', e);
+          res.destroy();
+          return;
+        }
         return next(e);
       }
     },

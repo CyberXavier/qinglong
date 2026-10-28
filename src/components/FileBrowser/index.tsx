@@ -52,12 +52,14 @@ const { Text } = Typography;
 interface FileBrowserProps {
   api?: 'scripts' | 'results';
   readOnly?: boolean;
+  allowDirectoryDownload?: boolean;
   labels?: { select: string; search: string; empty: string };
 }
 
 const Script = ({
   api = 'scripts',
   readOnly = false,
+  allowDirectoryDownload = false,
   labels = {
     select: '请选择脚本文件',
     search: '请输入脚本名',
@@ -69,6 +71,8 @@ const Script = ({
   const [select, setSelect] = useState<string>(intl.get(labels.select));
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const downloadController = useRef<AbortController>();
   const [mode, setMode] = useState('');
   const [height, setHeight] = useState<number>();
   const treeDom = useRef<any>();
@@ -88,6 +92,8 @@ const Script = ({
   const savedContentRef = useRef('');
   const currentKeyRef = useRef(currentNode?.key);
   currentKeyRef.current = currentNode?.key;
+
+  useEffect(() => () => downloadController.current?.abort(), []);
 
   useEffect(() => {
     setHistoryVisible(false);
@@ -139,21 +145,58 @@ const Script = ({
       });
   };
 
-  const downloadScript = () => {
-    if (currentNode?.type !== 'file') return;
+  const canDownload =
+    currentNode?.type === 'file' ||
+    (allowDirectoryDownload && currentNode?.type === 'directory');
+  const downloadLabel = intl.get(
+    allowDirectoryDownload && currentNode?.type === 'directory'
+      ? '打包下载'
+      : '下载',
+  );
+
+  const downloadScript = async () => {
+    if (!canDownload || downloadController.current) return;
     const node = currentNode;
-    request
-      .post<Blob>(
+    const isDirectory = node.type === 'directory';
+    const controller = new AbortController();
+    downloadController.current = controller;
+    setDownloading(true);
+    try {
+      const blob = await request.post<Blob>(
         `${config.apiPrefix}${api}/download`,
         {
-          filename: currentNode.title,
-          path: currentNode.parent || '',
+          filename: node.title,
+          path: node.parent || '',
         },
-        { responseType: 'blob' },
-      )
-      .then((res) => {
-        saveAs(res, node.title);
-      });
+        {
+          responseType: 'blob',
+          signal: controller.signal,
+          ...(isDirectory ? { timeout: 0 } : {}),
+          onError: ({ data }) => Promise.reject(data),
+        },
+      );
+      if (
+        !(blob instanceof Blob) ||
+        (isDirectory && blob.type !== 'application/zip')
+      ) {
+        throw blob;
+      }
+      saveAs(blob, isDirectory ? `${node.title}.zip` : node.title);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        let errorMessage = intl.get('下载失败，请重试');
+        if (error instanceof Blob && error.type.includes('json')) {
+          try {
+            errorMessage =
+              JSON.parse(await error.text()).message || errorMessage;
+          } catch {}
+        }
+        message.error(errorMessage);
+      }
+    } finally {
+      downloadController.current = undefined;
+      if (!controller.signal.aborted) setDownloading(false);
+    }
   };
 
   const initGetScript = (_data: any) => {
@@ -515,10 +558,10 @@ const Script = ({
   const resultMenu: MenuProps = {
     items: [
       {
-        label: intl.get('下载'),
+        label: downloading ? intl.get('下载中...') : downloadLabel,
         key: 'download',
         icon: <CloudDownloadOutlined />,
-        disabled: currentNode?.type !== 'file',
+        disabled: !canDownload || downloading,
       },
       {
         label: intl.get('删除'),
@@ -677,9 +720,10 @@ const Script = ({
                     </Tooltip>,
                   ]
                 : []),
-              <Tooltip title={intl.get('下载')}>
+              <Tooltip title={downloadLabel}>
                 <Button
-                  disabled={!currentNode || currentNode.type === 'directory'}
+                  disabled={!canDownload || downloading}
+                  loading={downloading}
                   type="primary"
                   onClick={downloadScript}
                   icon={<CloudDownloadOutlined />}
