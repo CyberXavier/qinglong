@@ -766,5 +766,6 @@
   "当前文件不支持预览，请下载查看": "Preview unavailable. Download the file to view it.",
   "打包下载": "Download ZIP",
   "下载中...": "Downloading...",
-  "下载失败，请重试": "Download failed. Please try again."
+  "下载失败，请重试": "Download failed. Please try again.",
+  "脚本结果（只读）": "Script Results (read-only)"
 }

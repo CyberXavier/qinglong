@@ -37,6 +37,10 @@ export default {
       value: 'scripts',
     },
     {
+      name: intl.get('脚本结果（只读）'),
+      value: 'results',
+    },
+    {
       name: intl.get('日志管理'),
       value: 'logs',
     },
@@ -59,6 +63,7 @@ export default {
     subscriptions: intl.get('订阅管理'),
     configs: intl.get('配置文件'),
     scripts: intl.get('脚本管理'),
+    results: intl.get('脚本结果（只读）'),
     logs: intl.get('日志管理'),
     dependencies: intl.get('依赖管理'),
     system: intl.get('系统信息'),

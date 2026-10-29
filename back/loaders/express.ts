@@ -101,6 +101,15 @@ export default ({ app }: { app: Application }) => {
       return next();
     }
 
+    // Open results access is download-only; panel routes keep their full API.
+    if (
+      (pathLower === '/open/results' ||
+        pathLower.startsWith('/open/results/')) &&
+      (req.method !== 'POST' || req.path !== '/open/results/download')
+    ) {
+      return res.status(403).send({ code: 403, message: t('暂无权限') });
+    }
+
     const headerToken = getToken(req);
     if (pathLower.startsWith('/open/')) {
       const apps = await shareStore.getApps();
