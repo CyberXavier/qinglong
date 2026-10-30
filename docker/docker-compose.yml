@@ -1,6 +1,6 @@
 services:
   web:
-    image: whyour/qinglong:latest # 基于 Debian 的版本：whyour/qinglong:debian  
+    image: reg01.sky-mobi.com/dev-tools/qinglong:release-v1
     volumes:
       - ./data:/ql/data
     ports:
