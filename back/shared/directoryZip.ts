@@ -7,13 +7,16 @@ import { pipeline } from 'stream/promises';
 import { ZipFile } from 'yazl';
 import { resolveFileAccess } from './fileAccess';
 import { t } from './i18n';
+import { resultDownloadFilter } from './resultDownloadFilter';
 
 /** Stream a directory without buffering file contents or keeping all files open. */
 export async function downloadDirectoryZip(
   directory: string,
   res: Response,
   blacklist: string[] = [],
+  excludePatterns: string[] = [],
 ) {
+  const excluded = resultDownloadFilter(excludePatterns);
   const zip = new ZipFile();
   const output = zip.outputStream as Readable;
   let stopped = false;
@@ -40,6 +43,8 @@ export async function downloadDirectoryZip(
       if (stopped) throw interrupted;
       if (entry.isSymbolicLink() || blacklist.includes(entry.name)) continue;
       const filePath = path.join(dir, entry.name);
+      const relativePath = path.relative(directory, filePath).split(path.sep).join('/');
+      if (excluded(relativePath, entry.isDirectory())) continue;
       const stats = await fs.lstat(filePath);
       if (stats.isSymbolicLink()) continue;
       const safePath = resolveFileAccess(directory, [filePath], blacklist);

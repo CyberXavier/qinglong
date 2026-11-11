@@ -7,6 +7,7 @@ import { readDirs, readDir, IFile, getFileContentByName } from '../config/util';
 import { resolveFileAccess } from '../shared/fileAccess';
 import { t } from '../shared/i18n';
 import { downloadDirectoryZip } from '../shared/directoryZip';
+import { normalizeResultExcludes } from '../shared/resultDownloadFilter';
 
 export default function fileBrowser({
   root,
@@ -121,6 +122,7 @@ export default function fileBrowser({
       body: Joi.object({
         filename: Joi.string().required(),
         path: Joi.string().optional().allow(''),
+        ...(allowDirectoryDownload ? { excludePatterns: Joi.array().items(Joi.string().max(2000).allow('')).max(200).optional() } : {}),
       }),
     }),
     async (req: Request, res: Response, next: NextFunction) => {
@@ -140,11 +142,18 @@ export default function fileBrowser({
           });
         }
         if (allowDirectoryDownload) {
+          let excludePatterns: string[];
+          try { excludePatterns = normalizeResultExcludes(req.body.excludePatterns); }
+          catch (error: any) { return res.status(400).send({ code: 400, message: error.message }); }
           const stats = await fs.lstat(filePath);
           if (stats.isDirectory()) {
-            await downloadDirectoryZip(filePath, res, blacklist);
+            if (excludePatterns.length) res.setHeader('X-QL-Results-Filter', 'exclude-v1');
+            const started = Date.now();
+            await downloadDirectoryZip(filePath, res, blacklist, excludePatterns);
+            if (excludePatterns.length) Container.get<Logger>('logger').info('结果目录排除打包完成，规则数=%d，耗时=%dms', excludePatterns.length, Date.now() - started);
             return;
           }
+          if (excludePatterns.length) return res.status(400).send({ code: 400, message: '单文件下载不支持目录排除规则' });
           if (!stats.isFile()) {
             return res.status(403).send({ code: 403, message: t('暂无权限') });
           }
