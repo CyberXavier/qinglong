@@ -463,7 +463,7 @@ const Other = ({
           <Input.Group compact>
             <InputNumber
               style={{ width: 180 }}
-              min={4}
+              min={1}
               value={systemConfig?.cronConcurrency}
               placeholder={intl.get('默认为 CPU 个数')}
               onChange={(value) => {
